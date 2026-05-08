@@ -16,7 +16,6 @@
     --red: #dc2626;
     --red-bg: #fef2f2;
     --red-light: #fecaca;
-    --gray-50: #f9fafb;
     --gray-100: #f3f4f6;
     --gray-200: #e5e7eb;
     --gray-400: #9ca3af;
@@ -138,26 +137,17 @@
   .history-meta { font-size: 12px; color: var(--gray-400); }
   .history-dur { margin-left: auto; font-family: 'Kanit', sans-serif; font-weight: 700; font-size: 13px; color: var(--gray-500); flex-shrink: 0; }
 
-  /* Modal — overlay and box are siblings at body level, no nesting */
   #modal-overlay {
-    display: none;
-    position: fixed;
+    display: none; position: fixed;
     top: 0; left: 0; width: 100vw; height: 100vh;
-    background: rgba(0,0,0,0.5);
-    z-index: 9998;
+    background: rgba(0,0,0,0.5); z-index: 9998;
   }
   #modal-box {
-    display: none;
-    position: fixed;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    background: white;
-    border-radius: 20px;
-    padding: 28px 24px;
-    width: calc(100vw - 48px);
-    max-width: 360px;
-    box-shadow: var(--shadow-lg);
-    z-index: 9999;
+    display: none; position: fixed;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: white; border-radius: 20px; padding: 28px 24px;
+    width: calc(100vw - 48px); max-width: 360px;
+    box-shadow: var(--shadow-lg); z-index: 9999;
   }
   .modal-icon { font-size: 36px; margin-bottom: 8px; }
   .modal-title { font-family: 'Kanit', sans-serif; font-weight: 700; font-size: 18px; color: var(--gray-900); margin-bottom: 4px; }
@@ -166,7 +156,7 @@
     display: block; width: 100%; padding: 12px 16px;
     border: 1.5px solid var(--gray-200); border-radius: var(--radius-sm);
     font-family: 'Sarabun', sans-serif; font-size: 15px; color: var(--gray-900);
-    background: var(--gray-50); outline: none; margin-bottom: 16px;
+    background: #f9fafb; outline: none; margin-bottom: 16px;
     transition: border-color 0.2s, box-shadow 0.2s;
   }
   #name-input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(22,163,74,0.12); background: white; }
@@ -239,7 +229,6 @@
   </div>
 </div>
 
-<!-- Modal overlay and box at root level — avoids all stacking context bugs -->
 <div id="modal-overlay" onclick="closeModal()"></div>
 <div id="modal-box">
   <div class="modal-icon">🔑</div>
@@ -253,89 +242,122 @@
 </div>
 
 <script>
-const state = { carts:{1:null,2:null}, pending:null, history:[], intervals:{} };
+// ─── Storage keys
+const KEYS = { carts: 'golfcart_carts', history: 'golfcart_history' };
 
+// ─── State (loaded from localStorage)
+const state = {
+  carts: loadCarts(),
+  pending: null,
+  history: loadHistory(),
+  intervals: {}
+};
+
+function loadCarts() {
+  try {
+    const raw = localStorage.getItem(KEYS.carts);
+    if (!raw) return {1: null, 2: null};
+    const parsed = JSON.parse(raw);
+    // Convert startMs strings back to numbers
+    for (const id of [1, 2]) {
+      if (parsed[id]) parsed[id].startMs = Number(parsed[id].startMs);
+    }
+    return parsed;
+  } catch(e) { return {1: null, 2: null}; }
+}
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(KEYS.history);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return arr.map(h => ({...h, start: new Date(h.start), end: new Date(h.end)}));
+  } catch(e) { return []; }
+}
+
+function saveCarts() {
+  localStorage.setItem(KEYS.carts, JSON.stringify(state.carts));
+}
+
+function saveHistory() {
+  localStorage.setItem(KEYS.history, JSON.stringify(
+    state.history.map(h => ({...h, start: h.start.toISOString(), end: h.end.toISOString()}))
+  ));
+}
+
+// ─── Utilities
+function pad(n) { return String(n).padStart(2,'0'); }
+function elapsedStr(t) {
+  const s = Math.floor((Date.now()-t)/1000);
+  return pad(Math.floor(s/3600))+':'+pad(Math.floor((s%3600)/60))+':'+pad(s%60);
+}
+function fmtTime(d) { return new Date(d).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDate(d) { return new Date(d).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'}); }
+function durStr(ms) {
+  const s=Math.floor(ms/1000), h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
+  return (h>0?h+'ชม. ':'')+m+'นาที';
+}
+function initials(name) {
+  const p = name.trim().split(/\s+/);
+  return p.length>=2 ? (p[0][0]||'')+(p[1][0]||'') : name.slice(0,2);
+}
+
+// ─── Clock
 function updateClock() {
   document.getElementById('clock').textContent =
     new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 }
-setInterval(updateClock,1000); updateClock();
+setInterval(updateClock, 1000); updateClock();
 
-function pad(n){return String(n).padStart(2,'0');}
-function elapsedStr(t){
-  const s=Math.floor((Date.now()-t)/1000);
-  return pad(Math.floor(s/3600))+':'+pad(Math.floor((s%3600)/60))+':'+pad(s%60);
-}
-function fmtTime(d){return d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});}
-function fmtDate(d){return d.toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'});}
-function durStr(ms){
-  const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60);
-  return (h>0?h+'ชม. ':'')+m+'นาที';
-}
-function initials(name){
-  const p=name.trim().split(/\s+/);
-  return p.length>=2?(p[0][0]||'')+(p[1][0]||''):name.slice(0,2);
-}
+// ─── Set cart active
+function setActive(id, name, startMs) {
+  state.carts[id] = {name, startMs};
+  saveCarts();
 
-function openModal(id){
-  state.pending=id;
-  document.getElementById('modal-title').textContent='รับกุญแจ รถคันที่ '+id;
-  document.getElementById('name-input').value='';
-  document.getElementById('modal-overlay').style.display='block';
-  document.getElementById('modal-box').style.display='block';
-  setTimeout(()=>document.getElementById('name-input').focus(),50);
-}
-function closeModal(){
-  document.getElementById('modal-overlay').style.display='none';
-  document.getElementById('modal-box').style.display='none';
-  state.pending=null;
-}
-function confirmName(){
-  const name=document.getElementById('name-input').value.trim();
-  if(!name){document.getElementById('name-input').focus();return;}
-  const id=state.pending;
-  closeModal();
-  setActive(id,name,Date.now());
-}
-document.getElementById('name-input').addEventListener('keydown',function(e){
-  if(e.key==='Enter') confirmName();
-});
-
-function setActive(id,name,startMs){
-  state.carts[id]={name,startMs};
-  document.getElementById('user-'+id).textContent=name;
-  document.getElementById('start-'+id).textContent=fmtTime(new Date(startMs));
+  document.getElementById('user-'+id).textContent = name;
+  document.getElementById('start-'+id).textContent = fmtTime(new Date(startMs));
   document.getElementById('card-'+id).classList.add('active');
-  const b=document.getElementById('badge-'+id);
-  b.className='status-badge busy';
-  b.innerHTML='<span class="status-dot pulse"></span> กำลังใช้งาน';
-  const btn=document.getElementById('btn-'+id);
-  btn.className='btn btn-return';
-  btn.textContent='🔓 คืนกุญแจ';
-  state.intervals[id]=setInterval(()=>{
-    const el=document.getElementById('timer-'+id);
-    if(el) el.textContent=elapsedStr(startMs);
-  },1000);
-}
+  const b = document.getElementById('badge-'+id);
+  b.className = 'status-badge busy';
+  b.innerHTML = '<span class="status-dot pulse"></span> กำลังใช้งาน';
+  const btn = document.getElementById('btn-'+id);
+  btn.className = 'btn btn-return';
+  btn.textContent = '🔓 คืนกุญแจ';
 
-function setIdle(id){
   clearInterval(state.intervals[id]);
-  state.carts[id]=null;
-  document.getElementById('card-'+id).classList.remove('active');
-  document.getElementById('timer-'+id).textContent='00:00:00';
-  const b=document.getElementById('badge-'+id);
-  b.className='status-badge idle';
-  b.innerHTML='<span class="status-dot"></span> ว่างอยู่';
-  const btn=document.getElementById('btn-'+id);
-  btn.className='btn btn-take';
-  btn.textContent='🔑 รับกุญแจ';
+  state.intervals[id] = setInterval(() => {
+    const el = document.getElementById('timer-'+id);
+    if (el) el.textContent = elapsedStr(startMs);
+  }, 1000);
 }
 
-function handleCart(id){
-  if(state.carts[id]){
-    const s=state.carts[id];
-    const endMs=Date.now();
-    state.history.unshift({cart:id,name:s.name,start:new Date(s.startMs),end:new Date(endMs),dur:durStr(endMs-s.startMs)});
+// ─── Set cart idle
+function setIdle(id) {
+  clearInterval(state.intervals[id]);
+  state.carts[id] = null;
+  saveCarts();
+
+  document.getElementById('card-'+id).classList.remove('active');
+  document.getElementById('timer-'+id).textContent = '00:00:00';
+  const b = document.getElementById('badge-'+id);
+  b.className = 'status-badge idle';
+  b.innerHTML = '<span class="status-dot"></span> ว่างอยู่';
+  const btn = document.getElementById('btn-'+id);
+  btn.className = 'btn btn-take';
+  btn.textContent = '🔑 รับกุญแจ';
+}
+
+// ─── Handle cart button
+function handleCart(id) {
+  if (state.carts[id]) {
+    const s = state.carts[id];
+    const endMs = Date.now();
+    state.history.unshift({
+      cart: id, name: s.name,
+      start: new Date(s.startMs), end: new Date(endMs),
+      dur: durStr(endMs - s.startMs)
+    });
+    saveHistory();
     setIdle(id);
     renderHistory();
   } else {
@@ -343,14 +365,40 @@ function handleCart(id){
   }
 }
 
-function renderHistory(){
-  const list=document.getElementById('history-list');
-  document.getElementById('hist-count').textContent=state.history.length;
-  if(!state.history.length){
-    list.innerHTML='<div class="history-empty"><div class="empty-icon">📭</div>ยังไม่มีประวัติการใช้งาน</div>';
+// ─── Modal
+function openModal(id) {
+  state.pending = id;
+  document.getElementById('modal-title').textContent = 'รับกุญแจ รถคันที่ '+id;
+  document.getElementById('name-input').value = '';
+  document.getElementById('modal-overlay').style.display = 'block';
+  document.getElementById('modal-box').style.display = 'block';
+  setTimeout(() => document.getElementById('name-input').focus(), 50);
+}
+function closeModal() {
+  document.getElementById('modal-overlay').style.display = 'none';
+  document.getElementById('modal-box').style.display = 'none';
+  state.pending = null;
+}
+function confirmName() {
+  const name = document.getElementById('name-input').value.trim();
+  if (!name) { document.getElementById('name-input').focus(); return; }
+  const id = state.pending;
+  closeModal();
+  setActive(id, name, Date.now());
+}
+document.getElementById('name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmName();
+});
+
+// ─── History render
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  document.getElementById('hist-count').textContent = state.history.length;
+  if (!state.history.length) {
+    list.innerHTML = '<div class="history-empty"><div class="empty-icon">📭</div>ยังไม่มีประวัติการใช้งาน</div>';
     return;
   }
-  list.innerHTML=state.history.map(h=>`
+  list.innerHTML = state.history.map(h => `
     <div class="history-item">
       <div class="history-avatar avatar-${h.cart}">${initials(h.name)}</div>
       <div style="flex:1;min-width:0;">
@@ -362,10 +410,26 @@ function renderHistory(){
   `).join('');
 }
 
-function clearHistory(){
-  if(!state.history.length) return;
-  if(confirm('ล้างประวัติทั้งหมดใช่ไหม?')){state.history=[];renderHistory();}
+function clearHistory() {
+  if (!state.history.length) return;
+  if (confirm('ล้างประวัติทั้งหมดใช่ไหม?')) {
+    state.history = [];
+    saveHistory();
+    renderHistory();
+  }
 }
+
+// ─── Init: restore state from localStorage on page load
+function init() {
+  renderHistory();
+  for (const id of [1, 2]) {
+    if (state.carts[id]) {
+      setActive(id, state.carts[id].name, state.carts[id].startMs);
+    }
+  }
+}
+
+init();
 </script>
 </body>
 </html>
